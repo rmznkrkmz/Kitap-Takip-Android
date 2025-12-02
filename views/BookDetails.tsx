@@ -7,6 +7,7 @@ interface BookDetailsProps {
   book: Book;
   onBack: () => void;
   onUpdateStatus: (id: string, status: Book['status']) => void;
+  onUpdateDates: (id: string, startDate?: string, finishDate?: string) => void;
   onUpdateNotes: (id: string, notes: string) => void;
   onToggleFavorite: (id: string) => void;
   onUpdateRating: (id: string, rating: number) => void;
@@ -17,6 +18,7 @@ const BookDetails: React.FC<BookDetailsProps> = ({
   book, 
   onBack, 
   onUpdateStatus, 
+  onUpdateDates,
   onUpdateNotes, 
   onToggleFavorite,
   onUpdateRating,
@@ -45,7 +47,7 @@ const BookDetails: React.FC<BookDetailsProps> = ({
   }, []);
 
   const toggleStatus = () => {
-    // Simple cycle for demo purposes
+    // Cycle: reading -> read -> want-to-read -> reading
     if (book.status === 'reading') onUpdateStatus(book.id, 'read');
     else if (book.status === 'read') onUpdateStatus(book.id, 'want-to-read');
     else onUpdateStatus(book.id, 'reading');
@@ -86,6 +88,10 @@ const BookDetails: React.FC<BookDetailsProps> = ({
       alert('Kitap bilgisi kopyalandı!');
     }
   };
+
+  // Logic to disable date inputs based on status
+  const isStartDateDisabled = book.status === 'want-to-read';
+  const isFinishDateDisabled = book.status !== 'read';
 
   return (
     <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-background-light dark:bg-background-dark text-zinc-900 dark:text-white">
@@ -173,13 +179,25 @@ const BookDetails: React.FC<BookDetailsProps> = ({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-xl bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 p-4">
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Başlangıç Tarihi</p>
-              <p className="font-semibold">{book.startDate || "-"}</p>
+            <div className={`rounded-xl bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 p-4 flex flex-col justify-center transition-opacity ${isStartDateDisabled ? 'opacity-50 grayscale' : ''}`}>
+              <label className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Başlangıç Tarihi</label>
+              <input 
+                type="date"
+                value={book.startDate || ''}
+                disabled={isStartDateDisabled}
+                onChange={(e) => onUpdateDates(book.id, e.target.value, book.finishDate)}
+                className="bg-transparent border-none p-0 text-zinc-900 dark:text-white font-semibold focus:ring-0 w-full cursor-pointer text-sm disabled:cursor-not-allowed"
+              />
             </div>
-            <div className="rounded-xl bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 p-4">
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Bitiş Tarihi</p>
-              <p className="font-semibold">{book.finishDate || "-"}</p>
+            <div className={`rounded-xl bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 p-4 flex flex-col justify-center transition-opacity ${isFinishDateDisabled ? 'opacity-50 grayscale' : ''}`}>
+              <label className="text-sm text-zinc-500 dark:text-zinc-400 mb-1">Bitiş Tarihi</label>
+              <input 
+                type="date"
+                value={book.finishDate || ''}
+                disabled={isFinishDateDisabled}
+                onChange={(e) => onUpdateDates(book.id, book.startDate, e.target.value)}
+                className="bg-transparent border-none p-0 text-zinc-900 dark:text-white font-semibold focus:ring-0 w-full cursor-pointer text-sm disabled:cursor-not-allowed"
+              />
             </div>
           </div>
 

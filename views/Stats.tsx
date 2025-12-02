@@ -12,9 +12,12 @@ interface StatsProps {
   setDailyPageGoal: (n: number) => void;
   dailyPagesRead: number;
   setDailyPagesRead: (n: number) => void;
+  readingHistory: Record<string, number>;
   streakCount: number;
   hasReadToday: boolean;
   onIncrementStreak: () => void;
+  hasSetInitialGoals: boolean;
+  setHasSetInitialGoals: (val: boolean) => void;
 }
 
 const Stats: React.FC<StatsProps> = ({ 
@@ -27,9 +30,12 @@ const Stats: React.FC<StatsProps> = ({
   setDailyPageGoal,
   dailyPagesRead,
   setDailyPagesRead,
+  readingHistory,
   streakCount,
   hasReadToday,
-  onIncrementStreak
+  onIncrementStreak,
+  hasSetInitialGoals,
+  setHasSetInitialGoals
 }) => {
   const readCount = books.filter(b => b.status === 'read').length;
   const isYearlyGoalMet = readCount >= yearlyGoal;
@@ -41,47 +47,102 @@ const Stats: React.FC<StatsProps> = ({
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
+  // Setup Modal State (Temporary input holders)
+  const [setupYearly, setSetupYearly] = useState(yearlyGoal.toString());
+  const [setupDaily, setSetupDaily] = useState(dailyPageGoal.toString());
+
+  // Report Date State (For Monthly Report Navigation)
+  const [reportDate, setReportDate] = useState(new Date());
+
   // Refs to track previous values for goal completion detection
   const prevDailyPages = useRef(dailyPagesRead);
   const prevDailyGoal = useRef(dailyPageGoal);
   const prevYearlyGoal = useRef(yearlyGoal);
   const prevReadCount = useRef(readCount);
 
-  // --- Monthly Goals Logic ---
   const now = new Date();
   const currentMonth = now.getMonth(); // 0-11
   const currentYear = now.getFullYear();
 
+  // --- Monthly Goals Logic (ALWAYS CURRENT MONTH) ---
   const readBooks = books.filter(b => b.status === 'read');
 
-  // Filter books read THIS month
-  const booksReadThisMonth = readBooks.filter(b => {
+  // Filter books read THIS month (For Goals)
+  const booksReadCurrentMonth = readBooks.filter(b => {
     if (!b.finishDate) return false;
-    const date = new Date(b.finishDate);
-    return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+    const [year, month, day] = b.finishDate.split('-').map(Number);
+    return (month - 1) === currentMonth && year === currentYear;
   });
 
   const booksReadBeforeThisMonth = readBooks.filter(b => {
-      // If no date, consider it old history
       if (!b.finishDate) return true;
-      const date = new Date(b.finishDate);
-      // Check if date is strictly before the start of this month
-      return date < new Date(currentYear, currentMonth, 1);
+      const [year, month, day] = b.finishDate.split('-').map(Number);
+      const bookDate = new Date(year, month - 1, day);
+      return bookDate.getTime() < new Date(currentYear, currentMonth, 1).getTime();
   });
 
   // Goal 1: Read 2 books this month
   const monthlyBookGoal = 2;
-  const monthlyBooksReadCount = booksReadThisMonth.length;
+  const monthlyBooksReadCount = booksReadCurrentMonth.length;
   const isMonthlyBookGoalMet = monthlyBooksReadCount >= monthlyBookGoal;
 
   // Goal 2: Discover a new genre
-  // Get all genres from books read BEFORE this month
   const pastGenres = new Set(booksReadBeforeThisMonth.map(b => b.genre).filter(Boolean));
+  const newGenreDiscovered = booksReadCurrentMonth.some(b => b.genre && !pastGenres.has(b.genre));
   
-  // Check if any book read THIS month has a genre not in pastGenres
-  const newGenreDiscovered = booksReadThisMonth.some(b => b.genre && !pastGenres.has(b.genre));
+  // --- Monthly Report Logic (DYNAMIC DATE) ---
   
-  // --- End Monthly Goals Logic ---
+  const handlePrevMonth = () => {
+    setReportDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setMonth(newDate.getMonth() - 1);
+      return newDate;
+    });
+  };
+
+  const handleNextMonth = () => {
+    setReportDate(prev => {
+      const newDate = new Date(prev);
+      newDate.setMonth(newDate.getMonth() + 1);
+      return newDate;
+    });
+  };
+
+  // Check if we are viewing the current month to disable "Next" button
+  const isViewingCurrentMonth = 
+    reportDate.getMonth() === currentMonth && 
+    reportDate.getFullYear() === currentYear;
+
+  const reportMonthName = reportDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+  const reportMonthIdx = reportDate.getMonth();
+  const reportYearIdx = reportDate.getFullYear();
+
+  // Filter books for the SELECTED report month
+  const booksReadReportMonth = readBooks.filter(b => {
+    if (!b.finishDate) return false;
+    const [year, month, day] = b.finishDate.split('-').map(Number);
+    return (month - 1) === reportMonthIdx && year === reportYearIdx;
+  });
+
+  const reportBookCount = booksReadReportMonth.length;
+
+  // Avg Rating this report month
+  const totalReportRating = booksReadReportMonth.reduce((acc: number, b: Book) => acc + b.rating, 0);
+  const avgReportRating = reportBookCount > 0 
+    ? (totalReportRating / reportBookCount).toFixed(1) 
+    : '-';
+
+  // Favorite Genre this report month
+  const reportGenreCounts = booksReadReportMonth.reduce((acc: Record<string, number>, b: Book) => {
+    const genre = b.genre || 'Diğer';
+    acc[genre] = (acc[genre] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  
+  const favoriteReportGenre = Object.entries(reportGenreCounts).sort((a: [string, number], b: [string, number]) => b[1] - a[1])[0]?.[0] || '-';
+
+
+  // --- End Logic ---
 
   // Sync local input when parent prop changes (e.g. via +10 buttons)
   useEffect(() => {
@@ -126,30 +187,115 @@ const Stats: React.FC<StatsProps> = ({
     }
   };
 
+  const handleSetupSave = () => {
+    const yGoal = parseInt(setupYearly);
+    const dGoal = parseInt(setupDaily);
+
+    if (yGoal > 0 && dGoal > 0) {
+      setYearlyGoal(yGoal);
+      setDailyPageGoal(dGoal);
+      setHasSetInitialGoals(true);
+    }
+  };
+
   const isGoalMet = dailyPagesRead >= dailyPageGoal && dailyPageGoal > 0;
 
-  // Mock data for the chart, with the last day being the active state
-  const chartData = [
-    { label: 'Pzt', value: 35 },
-    { label: 'Sal', value: 52 },
-    { label: 'Çar', value: 25 },
-    { label: 'Per', value: 65 },
-    { label: 'Cum', value: 48 },
-    { label: 'Cmt', value: 80 },
-    { label: 'Paz', value: dailyPagesRead },
-  ];
+  // --- Dynamic Chart Logic (REAL DATA) ---
+  const today = new Date();
+  
+  // 1. Determine Monday of the current week
+  // JS getDay(): Sunday=0, Monday=1, ..., Saturday=6
+  const currentDayIndex = today.getDay(); 
+  const diffToMonday = today.getDate() - currentDayIndex + (currentDayIndex === 0 ? -6 : 1);
+  const monday = new Date(today);
+  monday.setDate(diffToMonday);
+  monday.setHours(0, 0, 0, 0); // Reset time part for accurate comparisons
 
-  // Calculate dynamic max height for the chart to fit bars and goal line
+  // 2. Generate Data for Mon-Sun of THIS week
+  const weekDays = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+  
+  const chartData = weekDays.map((label, index) => {
+    const dayDate = new Date(monday);
+    dayDate.setDate(monday.getDate() + index);
+    
+    const key = `${dayDate.getFullYear()}-${String(dayDate.getMonth() + 1).padStart(2, '0')}-${String(dayDate.getDate()).padStart(2, '0')}`;
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    let value = 0;
+    const isFuture = dayDate.getTime() > today.getTime();
+    const isToday = key === todayKey;
+
+    if (isFuture) {
+      value = 0;
+    } else {
+      value = readingHistory[key] || 0;
+    }
+
+    return { label, value, isToday };
+  });
+
   const maxChartValue = Math.max(...chartData.map(d => d.value), dailyPageGoal) * 1.2;
+
+  const todayFormatted = today.toLocaleDateString('tr-TR');
 
   return (
     <div className="relative flex min-h-screen w-full flex-col bg-background-dark text-white font-display">
       
+      {/* Onboarding Modal - Show if goals not set */}
+      {!hasSetInitialGoals && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
+           <div className="bg-[#1c2127] border border-zinc-700 w-full max-w-sm rounded-2xl shadow-2xl p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-300">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-primary/20 text-primary rounded-full flex items-center justify-center mx-auto mb-4">
+                   <span className="material-symbols-outlined text-3xl">flag</span>
+                </div>
+                <h2 className="text-xl font-bold text-white">Hoş Geldiniz!</h2>
+                <p className="text-zinc-400 text-sm mt-2">Okuma alışkanlığınızı takip etmeye başlamadan önce hedeflerinizi belirleyelim.</p>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                 <div>
+                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Yıllık Kitap Hedefi</label>
+                    <div className="relative">
+                       <input 
+                         type="number" 
+                         value={setupYearly} 
+                         onChange={(e) => setSetupYearly(e.target.value)}
+                         className="w-full bg-zinc-800 border border-zinc-700 text-white rounded-lg py-3 px-4 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
+                       />
+                       <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">Kitap</span>
+                    </div>
+                 </div>
+
+                 <div>
+                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1 block">Günlük Sayfa Hedefi</label>
+                    <div className="relative">
+                       <input 
+                         type="number" 
+                         value={setupDaily} 
+                         onChange={(e) => setSetupDaily(e.target.value)}
+                         className="w-full bg-zinc-800 border border-zinc-700 text-white rounded-lg py-3 px-4 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
+                       />
+                       <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">Sayfa</span>
+                    </div>
+                 </div>
+              </div>
+
+              <button 
+                onClick={handleSetupSave}
+                className="w-full py-3.5 bg-primary hover:bg-primary/90 text-white font-bold rounded-xl shadow-lg shadow-primary/25 transition-all active:scale-95"
+              >
+                Takibe Başla
+              </button>
+           </div>
+        </div>
+      )}
+
       {/* Toast Notification - Prominent */}
       <div 
-        className={`fixed inset-x-0 top-10 z-50 flex justify-center px-4 pointer-events-none transition-all duration-700 ease-out ${showToast ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-10 opacity-0 scale-95'}`}
+        className={`fixed inset-x-0 top-10 z-50 flex justify-center px-4 transition-all duration-700 ease-out ${showToast ? 'translate-y-0 opacity-100 scale-100 pointer-events-auto' : '-translate-y-10 opacity-0 scale-95 pointer-events-none'}`}
       >
-        <div className={`bg-gradient-to-r from-green-900/90 to-[#1c2127]/95 backdrop-blur-xl border border-green-500/50 text-white p-6 rounded-2xl shadow-[0_10px_40px_-10px_rgba(34,197,94,0.5)] flex flex-col items-center gap-3 text-center max-w-sm w-full transition-all ${showToast ? 'pointer-events-auto' : 'pointer-events-none'}`}>
+        <div className="bg-gradient-to-r from-green-900/90 to-[#1c2127]/95 backdrop-blur-xl border border-green-500/50 text-white p-6 rounded-2xl shadow-[0_10px_40px_-10px_rgba(34,197,94,0.5)] flex flex-col items-center gap-3 text-center max-w-sm w-full">
            <div className="bg-gradient-to-br from-green-400 to-green-600 p-3 rounded-full text-white shadow-lg shadow-green-500/30 mb-1 animate-bounce">
              <span className="material-symbols-outlined material-symbols-filled text-3xl">celebration</span>
            </div>
@@ -159,7 +305,7 @@ const Stats: React.FC<StatsProps> = ({
            </div>
            <button 
              onClick={() => setShowToast(false)}
-             className="mt-2 text-xs font-bold uppercase tracking-wider text-green-400 hover:text-green-300 px-4 py-2 rounded-lg hover:bg-green-500/10 transition-colors cursor-pointer"
+             className="mt-2 text-xs font-bold uppercase tracking-wider text-green-400 hover:text-green-300 px-4 py-2 rounded-lg hover:bg-green-500/10 transition-colors cursor-pointer relative z-50"
            >
              Kapat
            </button>
@@ -177,7 +323,7 @@ const Stats: React.FC<StatsProps> = ({
         {/* Streak Card - Minimalist Version */}
         <div className="px-4 pt-4 pb-2">
           <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-card-dark p-3 shadow-md relative z-20">
-             <div className="flex items-center gap-3">
+             <div className="flex items-center gap-3 pointer-events-none">
                 <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${hasReadToday ? 'bg-orange-500/10 text-orange-500' : 'bg-zinc-800 text-zinc-600'}`}>
                    <span className={`material-symbols-outlined text-xl ${hasReadToday ? 'animate-pulse' : ''}`} style={{ fontVariationSettings: "'FILL' 1" }}>local_fire_department</span>
                 </div>
@@ -190,7 +336,7 @@ const Stats: React.FC<StatsProps> = ({
              <button 
                 onClick={onIncrementStreak}
                 disabled={hasReadToday}
-                className={`h-9 rounded-lg px-4 text-xs font-bold transition-all ${
+                className={`h-9 rounded-lg px-4 text-xs font-bold relative z-20 transition-all ${
                   hasReadToday 
                     ? 'cursor-default bg-green-500/10 text-green-400' 
                     : 'cursor-pointer bg-primary text-white shadow-md shadow-primary/20 hover:bg-primary/90 active:scale-95'
@@ -318,19 +464,24 @@ const Stats: React.FC<StatsProps> = ({
           </div>
         </section>
 
-        {/* Weekly Activity Chart */}
+        {/* Weekly Activity Chart - REAL DATA */}
         <section>
              <h2 className="text-white text-xl font-bold px-4 pb-3 pt-6">Haftalık Aktivite</h2>
              <div className="mx-4 bg-card-dark border border-zinc-800 rounded-xl p-5">
                 <div className="flex justify-between items-center mb-8">
                     <div>
-                        <p className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Haftalık Ortalama</p>
-                        <p className="text-white text-2xl font-bold mt-0.5">52 Sayfa</p>
+                        <div className="flex items-center gap-2">
+                            <p className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Bugün</p>
+                            <span className="text-zinc-500 text-[10px] font-normal bg-zinc-800 px-1.5 py-0.5 rounded">
+                                {todayFormatted}
+                            </span>
+                        </div>
+                        <p className="text-white text-2xl font-bold mt-0.5">{dailyPagesRead} Sayfa</p>
                     </div>
                      <div className="flex items-center gap-3 bg-zinc-800/50 px-3 py-1.5 rounded-lg border border-zinc-700/50">
                         <div className="flex items-center gap-1.5">
                            <span className="w-2.5 h-2.5 rounded-full bg-primary"></span>
-                           <span className="text-[10px] text-zinc-300 font-medium">Okunan</span>
+                           <span className="text-[10px] text-zinc-300 font-medium">Bugün</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                            <span className="w-2.5 h-2.5 rounded-full bg-zinc-600"></span>
@@ -351,23 +502,22 @@ const Stats: React.FC<StatsProps> = ({
                     {/* Bars */}
                     <div className="relative z-10 flex items-end justify-between h-full gap-2 sm:gap-4">
                         {chartData.map((data, index) => {
-                             const isToday = index === 6;
-                             const heightPercent = Math.min((data.value / maxChartValue) * 100, 100);
+                             const heightPercent = maxChartValue > 0 ? Math.min((data.value / maxChartValue) * 100, 100) : 0;
                              
                              return (
                              <div key={index} className="flex flex-col items-center flex-1 h-full justify-end group cursor-default">
                                 <div className="relative w-full max-w-[32px] flex items-end justify-center h-full">
                                    <div 
-                                      className={`w-full rounded-t-sm transition-all duration-500 ease-out relative group-hover:opacity-90 ${isToday ? 'bg-primary shadow-[0_0_10px_rgba(19,127,236,0.3)]' : 'bg-zinc-700'}`}
+                                      className={`w-full rounded-t-sm transition-all duration-500 ease-out relative group-hover:opacity-90 ${data.isToday ? 'bg-primary shadow-[0_0_10px_rgba(19,127,236,0.3)]' : 'bg-zinc-700'}`}
                                       style={{ height: `${heightPercent}%` }}
                                    >
                                       {/* Value Label */}
-                                      <div className={`absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold px-1.5 py-0.5 rounded transition-all transform ${isToday ? 'bg-primary text-white scale-100' : 'bg-zinc-800 text-zinc-300 opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100'}`}>
+                                      <div className={`absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold px-1.5 py-0.5 rounded transition-all transform ${data.isToday ? 'bg-primary text-white scale-100' : 'bg-zinc-800 text-zinc-300 opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100'}`}>
                                           {data.value}
                                       </div>
                                    </div>
                                 </div>
-                                <span className={`text-[10px] mt-3 font-medium transition-colors ${isToday ? 'text-primary' : 'text-zinc-500 group-hover:text-zinc-400'}`}>{data.label}</span>
+                                <span className={`text-[10px] mt-3 font-medium transition-colors ${data.isToday ? 'text-primary' : 'text-zinc-500 group-hover:text-zinc-400'}`}>{data.label}</span>
                              </div>
                              );
                         })}
@@ -453,15 +603,76 @@ const Stats: React.FC<StatsProps> = ({
 
           </div>
         </section>
+
+         {/* Monthly Report Section - Interactive */}
+         <section>
+          <h2 className="text-white text-xl font-bold px-4 pb-3 pt-6">Aylık Özet Raporu</h2>
+          <div className="px-4">
+            <div className="bg-card-dark border border-zinc-800 rounded-xl p-5 shadow-sm">
+                
+                {/* Interactive Month Selector */}
+                <div className="flex items-center justify-between mb-6 pb-4 border-b border-zinc-800">
+                    <button 
+                        onClick={handlePrevMonth}
+                        className="h-8 w-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                    >
+                        <span className="material-symbols-outlined text-xl">chevron_left</span>
+                    </button>
+                    
+                    <div className="flex items-center gap-2">
+                         <span className="material-symbols-outlined text-zinc-500 text-lg">calendar_month</span>
+                         <span className="text-sm font-bold text-white uppercase tracking-wider">{reportMonthName}</span>
+                    </div>
+
+                    <button 
+                        onClick={handleNextMonth}
+                        disabled={isViewingCurrentMonth}
+                        className={`h-8 w-8 flex items-center justify-center rounded-full transition-colors ${isViewingCurrentMonth ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                    >
+                        <span className="material-symbols-outlined text-xl">chevron_right</span>
+                    </button>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-col items-center p-3 bg-zinc-800/30 rounded-lg">
+                        <span className="text-2xl font-bold text-white mb-1">{reportBookCount}</span>
+                        <span className="text-[10px] text-zinc-500 text-center leading-tight">Okunan<br/>Kitap</span>
+                    </div>
+                    <div className="flex flex-col items-center p-3 bg-zinc-800/30 rounded-lg">
+                        <span className="text-2xl font-bold text-yellow-500 mb-1">{avgReportRating}</span>
+                        <span className="text-[10px] text-zinc-500 text-center leading-tight">Ortalama<br/>Puan</span>
+                    </div>
+                    <div className="flex flex-col items-center p-3 bg-zinc-800/30 rounded-lg">
+                        <span className="text-lg font-bold text-purple-400 mb-1 truncate max-w-full px-1">{favoriteReportGenre}</span>
+                        <span className="text-[10px] text-zinc-500 text-center leading-tight">Favori<br/>Tür</span>
+                    </div>
+                </div>
+            </div>
+          </div>
+        </section>
       </main>
 
       {/* Bottom Nav */}
-      <nav className="fixed bottom-0 left-0 right-0 flex justify-around items-center bg-[#101922]/90 backdrop-blur-md border-t border-zinc-800 h-20 z-40">
-        <button onClick={() => onNavClick('dashboard')} className="flex flex-col items-center justify-center gap-1 text-zinc-500 hover:text-white transition-colors">
+      <nav className="fixed bottom-0 left-0 right-0 flex justify-around items-end bg-[#101922]/90 backdrop-blur-md border-t border-zinc-800 h-20 pb-4 z-40">
+        <button 
+          onClick={() => onNavClick('dashboard')} 
+          className="flex flex-col items-center justify-center gap-1 w-20 text-zinc-500 hover:text-white transition-colors"
+        >
           <span className="material-symbols-outlined">home</span>
           <span className="text-[10px] font-medium">Anasayfa</span>
         </button>
-        <button className="flex flex-col items-center justify-center gap-1 text-primary">
+        
+        {/* 100 Button */}
+        <div className="relative -top-5">
+           <button 
+             onClick={() => onNavClick('top100')}
+             className="flex items-center justify-center w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 transform transition-transform hover:scale-110 active:scale-95 border-4 border-background-dark"
+           >
+             <span className="text-sm font-black tracking-tighter">100</span>
+           </button>
+        </div>
+
+        <button className="flex flex-col items-center justify-center gap-1 w-20 text-primary transition-colors">
           <span className="material-symbols-outlined material-symbols-filled">emoji_events</span>
           <span className="text-[10px] font-bold">Başarılar</span>
         </button>

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Book, TabType } from '../types';
+import { Book, TabType, ViewState } from '../types';
 import RatingStars from '../components/RatingStars';
 
 interface DashboardProps {
@@ -10,6 +10,10 @@ interface DashboardProps {
   onBookClick: (id: string) => void;
   onAddClick: () => void;
   onStatsClick: () => void;
+  onTop100Click: () => void;
+  dashboardTitle: string;
+  userName: string;
+  onUpdateName: (name: string) => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -18,10 +22,18 @@ const Dashboard: React.FC<DashboardProps> = ({
   setActiveTab, 
   onBookClick, 
   onAddClick,
-  onStatsClick
+  onStatsClick,
+  onTop100Click,
+  dashboardTitle,
+  userName,
+  onUpdateName
 }) => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Name Editing State
+  const [isNameModalOpen, setIsNameModalOpen] = useState(false);
+  const [nameInput, setNameInput] = useState('');
 
   const filteredBooks = books.filter(book => {
     const matchesTab = book.status === activeTab;
@@ -35,6 +47,19 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleCloseSearch = () => {
     setIsSearchOpen(false);
     setSearchQuery('');
+  };
+
+  const openNameEdit = () => {
+    setNameInput(userName);
+    setIsNameModalOpen(true);
+  };
+
+  const saveNameEdit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (nameInput.trim()) {
+      onUpdateName(nameInput.trim());
+      setIsNameModalOpen(false);
+    }
   };
 
   const tabs: { id: TabType; label: string }[] = [
@@ -69,10 +94,20 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         ) : (
           <>
-            <h2 className="text-zinc-900 dark:text-white text-2xl font-bold leading-tight tracking-tight animate-in fade-in slide-in-from-left-4 duration-200">Kitaplarım Panosu</h2>
+            <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+              <h2 className="text-zinc-900 dark:text-white text-xl font-bold leading-tight tracking-tight truncate">
+                {dashboardTitle}
+              </h2>
+              <button 
+                onClick={openNameEdit}
+                className="h-8 w-8 flex items-center justify-center rounded-full text-zinc-400 hover:text-primary hover:bg-zinc-100 dark:hover:bg-zinc-800/50 transition-colors shrink-0"
+              >
+                <span className="material-symbols-outlined text-lg">edit</span>
+              </button>
+            </div>
             <button 
               onClick={() => setIsSearchOpen(true)}
-              className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
             >
               <span className="material-symbols-outlined text-2xl text-zinc-900 dark:text-white">search</span>
             </button>
@@ -157,7 +192,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Floating Action Button */}
-      <div className="fixed bottom-6 right-6 z-30">
+      <div className="fixed bottom-24 right-6 z-30">
         <button 
           onClick={onAddClick}
           className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/40 hover:scale-105 active:scale-95 transition-transform"
@@ -166,16 +201,66 @@ const Dashboard: React.FC<DashboardProps> = ({
         </button>
       </div>
       
-       {/* Bottom Navigation for Stats Demo */}
-       <div className="fixed bottom-6 left-6 z-30">
-        <button 
-          onClick={onStatsClick}
-          className="flex h-12 px-4 gap-2 items-center justify-center rounded-full bg-card-dark text-white shadow-lg border border-zinc-700 hover:bg-zinc-800 transition-colors"
-        >
-          <span className="material-symbols-outlined text-xl">bar_chart</span>
-          <span className="text-sm font-medium">İstatistikler</span>
+       {/* Bottom Navigation */}
+       <nav className="fixed bottom-0 left-0 right-0 flex justify-around items-end bg-background-light/90 dark:bg-[#101922]/90 backdrop-blur-md border-t border-zinc-200 dark:border-zinc-800 h-20 pb-4 z-40">
+        <button className="flex flex-col items-center justify-center gap-1 w-20 text-primary transition-colors">
+          <span className="material-symbols-outlined material-symbols-filled">home</span>
+          <span className="text-[10px] font-bold">Anasayfa</span>
         </button>
-      </div>
+
+        {/* 100 Button */}
+        <div className="relative -top-5">
+           <button 
+             onClick={onTop100Click}
+             className="flex items-center justify-center w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 transform transition-transform hover:scale-110 active:scale-95 border-4 border-background-light dark:border-background-dark"
+           >
+             <span className="text-sm font-black tracking-tighter">100</span>
+           </button>
+        </div>
+
+        <button 
+          onClick={onStatsClick} 
+          className="flex flex-col items-center justify-center gap-1 w-20 text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
+        >
+          <span className="material-symbols-outlined">emoji_events</span>
+          <span className="text-[10px] font-medium">Başarılar</span>
+        </button>
+      </nav>
+
+      {/* Edit Name Modal */}
+      {isNameModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+           <div className="bg-white dark:bg-[#1c2127] border border-zinc-200 dark:border-zinc-700 w-full max-w-xs rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+              <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-4">İsim Düzenle</h3>
+              <form onSubmit={saveNameEdit} className="flex flex-col gap-4">
+                <input 
+                   type="text" 
+                   value={nameInput}
+                   onChange={(e) => setNameInput(e.target.value)}
+                   className="w-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 text-zinc-900 dark:text-white rounded-lg py-3 px-4 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
+                   placeholder="Adınız"
+                   autoFocus
+                />
+                <div className="flex gap-2 justify-end mt-2">
+                   <button 
+                     type="button"
+                     onClick={() => setIsNameModalOpen(false)}
+                     className="px-4 py-2 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-sm font-medium transition-colors"
+                   >
+                     Vazgeç
+                   </button>
+                   <button 
+                     type="submit"
+                     disabled={!nameInput.trim()}
+                     className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                   >
+                     Kaydet
+                   </button>
+                </div>
+              </form>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
