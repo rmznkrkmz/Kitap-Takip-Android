@@ -26,11 +26,7 @@ jobs:
       - name: Build Web Assets
         run: npm run build
 
-      # Capacitor paketlerinin yüklü olduğundan emin olmak için tekrar ekliyoruz
-      - name: Add Android Platform
-        run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap add android
+
 
       - name: Sync Capacitor
         run: npx cap sync
