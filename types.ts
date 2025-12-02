@@ -18,7 +18,7 @@ export interface Book {
   isFavorite?: boolean;
 }
 
-export type ViewState = 'dashboard' | 'add' | 'details' | 'stats';
+export type ViewState = 'login' | 'dashboard' | 'add' | 'details' | 'stats' | 'top100';
 
 export type TabType = ReadingStatus;
 
