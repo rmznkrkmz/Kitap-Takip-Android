@@ -1,0 +1,473 @@
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Book, ViewState } from '../types';
+
+interface StatsProps {
+  books: Book[];
+  onBack: () => void;
+  onNavClick: (view: ViewState) => void;
+  yearlyGoal: number;
+  setYearlyGoal: (n: number) => void;
+  dailyPageGoal: number;
+  setDailyPageGoal: (n: number) => void;
+  dailyPagesRead: number;
+  setDailyPagesRead: (n: number) => void;
+  streakCount: number;
+  hasReadToday: boolean;
+  onIncrementStreak: () => void;
+}
+
+const Stats: React.FC<StatsProps> = ({ 
+  books, 
+  onBack, 
+  onNavClick,
+  yearlyGoal,
+  setYearlyGoal,
+  dailyPageGoal,
+  setDailyPageGoal,
+  dailyPagesRead,
+  setDailyPagesRead,
+  streakCount,
+  hasReadToday,
+  onIncrementStreak
+}) => {
+  const readCount = books.filter(b => b.status === 'read').length;
+  const isYearlyGoalMet = readCount >= yearlyGoal;
+
+  // Local state for manual page input
+  const [localPagesInput, setLocalPagesInput] = useState(dailyPagesRead.toString());
+  
+  // Toast Notification State
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
+  // Refs to track previous values for goal completion detection
+  const prevDailyPages = useRef(dailyPagesRead);
+  const prevDailyGoal = useRef(dailyPageGoal);
+  const prevYearlyGoal = useRef(yearlyGoal);
+  const prevReadCount = useRef(readCount);
+
+  // --- Monthly Goals Logic ---
+  const now = new Date();
+  const currentMonth = now.getMonth(); // 0-11
+  const currentYear = now.getFullYear();
+
+  const readBooks = books.filter(b => b.status === 'read');
+
+  // Filter books read THIS month
+  const booksReadThisMonth = readBooks.filter(b => {
+    if (!b.finishDate) return false;
+    const date = new Date(b.finishDate);
+    return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+  });
+
+  const booksReadBeforeThisMonth = readBooks.filter(b => {
+      // If no date, consider it old history
+      if (!b.finishDate) return true;
+      const date = new Date(b.finishDate);
+      // Check if date is strictly before the start of this month
+      return date < new Date(currentYear, currentMonth, 1);
+  });
+
+  // Goal 1: Read 2 books this month
+  const monthlyBookGoal = 2;
+  const monthlyBooksReadCount = booksReadThisMonth.length;
+  const isMonthlyBookGoalMet = monthlyBooksReadCount >= monthlyBookGoal;
+
+  // Goal 2: Discover a new genre
+  // Get all genres from books read BEFORE this month
+  const pastGenres = new Set(booksReadBeforeThisMonth.map(b => b.genre).filter(Boolean));
+  
+  // Check if any book read THIS month has a genre not in pastGenres
+  const newGenreDiscovered = booksReadThisMonth.some(b => b.genre && !pastGenres.has(b.genre));
+  
+  // --- End Monthly Goals Logic ---
+
+  // Sync local input when parent prop changes (e.g. via +10 buttons)
+  useEffect(() => {
+    setLocalPagesInput(dailyPagesRead.toString());
+  }, [dailyPagesRead]);
+
+  // Check Daily Goal Completion
+  useEffect(() => {
+    const isDailyMet = dailyPagesRead >= dailyPageGoal && dailyPageGoal > 0;
+    const wasDailyMet = prevDailyPages.current >= prevDailyGoal.current && prevDailyGoal.current > 0;
+
+    if (isDailyMet && !wasDailyMet) {
+       setToastMessage("Tebrikler! Günlük okuma hedefine ulaştın! 🎉");
+       setShowToast(true);
+       setTimeout(() => setShowToast(false), 6000);
+    }
+
+    prevDailyPages.current = dailyPagesRead;
+    prevDailyGoal.current = dailyPageGoal;
+  }, [dailyPagesRead, dailyPageGoal]);
+
+  // Check Yearly Goal Completion
+  useEffect(() => {
+    const currentReadCount = books.filter(b => b.status === 'read').length;
+    const isYearlyMet = currentReadCount >= yearlyGoal && yearlyGoal > 0;
+    const wasYearlyMet = prevReadCount.current >= prevYearlyGoal.current && prevYearlyGoal.current > 0;
+
+    if (isYearlyMet && !wasYearlyMet) {
+       setToastMessage("Muhteşem! Yıllık kitap hedefini tamamladın! 🏆");
+       setShowToast(true);
+       setTimeout(() => setShowToast(false), 6000);
+    }
+
+    prevReadCount.current = currentReadCount;
+    prevYearlyGoal.current = yearlyGoal;
+  }, [yearlyGoal, books]);
+
+  const handleManualSave = () => {
+    const val = parseInt(localPagesInput);
+    if (!isNaN(val)) {
+      setDailyPagesRead(val);
+    }
+  };
+
+  const isGoalMet = dailyPagesRead >= dailyPageGoal && dailyPageGoal > 0;
+
+  // Mock data for the chart, with the last day being the active state
+  const chartData = [
+    { label: 'Pzt', value: 35 },
+    { label: 'Sal', value: 52 },
+    { label: 'Çar', value: 25 },
+    { label: 'Per', value: 65 },
+    { label: 'Cum', value: 48 },
+    { label: 'Cmt', value: 80 },
+    { label: 'Paz', value: dailyPagesRead },
+  ];
+
+  // Calculate dynamic max height for the chart to fit bars and goal line
+  const maxChartValue = Math.max(...chartData.map(d => d.value), dailyPageGoal) * 1.2;
+
+  return (
+    <div className="relative flex min-h-screen w-full flex-col bg-background-dark text-white font-display">
+      
+      {/* Toast Notification - Prominent */}
+      <div 
+        className={`fixed inset-x-0 top-10 z-50 flex justify-center px-4 pointer-events-none transition-all duration-700 ease-out ${showToast ? 'translate-y-0 opacity-100 scale-100' : '-translate-y-10 opacity-0 scale-95'}`}
+      >
+        <div className={`bg-gradient-to-r from-green-900/90 to-[#1c2127]/95 backdrop-blur-xl border border-green-500/50 text-white p-6 rounded-2xl shadow-[0_10px_40px_-10px_rgba(34,197,94,0.5)] flex flex-col items-center gap-3 text-center max-w-sm w-full transition-all ${showToast ? 'pointer-events-auto' : 'pointer-events-none'}`}>
+           <div className="bg-gradient-to-br from-green-400 to-green-600 p-3 rounded-full text-white shadow-lg shadow-green-500/30 mb-1 animate-bounce">
+             <span className="material-symbols-outlined material-symbols-filled text-3xl">celebration</span>
+           </div>
+           <div>
+             <h4 className="font-bold text-xl tracking-tight">Harika İş!</h4>
+             <p className="text-zinc-200 mt-1 font-medium">{toastMessage}</p>
+           </div>
+           <button 
+             onClick={() => setShowToast(false)}
+             className="mt-2 text-xs font-bold uppercase tracking-wider text-green-400 hover:text-green-300 px-4 py-2 rounded-lg hover:bg-green-500/10 transition-colors cursor-pointer"
+           >
+             Kapat
+           </button>
+        </div>
+      </div>
+
+      <header className="flex items-center bg-background-dark p-4 pb-2 justify-between sticky top-0 z-10 border-b border-zinc-800/50">
+        <button onClick={onBack} className="text-white flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-zinc-800 transition-colors">
+          <span className="material-symbols-outlined">arrow_back_ios_new</span>
+        </button>
+        <h1 className="text-white text-lg font-bold leading-tight flex-1 text-center pr-10">Okuma Serisi ve Kilometre Taşları</h1>
+      </header>
+
+      <main className="flex-1 pb-24">
+        {/* Streak Card - Minimalist Version */}
+        <div className="px-4 pt-4 pb-2">
+          <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-card-dark p-3 shadow-md relative z-20">
+             <div className="flex items-center gap-3">
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${hasReadToday ? 'bg-orange-500/10 text-orange-500' : 'bg-zinc-800 text-zinc-600'}`}>
+                   <span className={`material-symbols-outlined text-xl ${hasReadToday ? 'animate-pulse' : ''}`} style={{ fontVariationSettings: "'FILL' 1" }}>local_fire_department</span>
+                </div>
+                <div className="flex flex-col">
+                   <span className="text-lg font-bold leading-none text-white">{streakCount} Gün</span>
+                   <span className="text-[10px] font-medium text-zinc-500">{hasReadToday ? 'Seri aktif' : 'Seri tehlikede'}</span>
+                </div>
+             </div>
+             
+             <button 
+                onClick={onIncrementStreak}
+                disabled={hasReadToday}
+                className={`h-9 rounded-lg px-4 text-xs font-bold transition-all ${
+                  hasReadToday 
+                    ? 'cursor-default bg-green-500/10 text-green-400' 
+                    : 'cursor-pointer bg-primary text-white shadow-md shadow-primary/20 hover:bg-primary/90 active:scale-95'
+                }`}
+              >
+                {hasReadToday ? 'Tamamlandı' : 'Bugün Okudum'}
+              </button>
+          </div>
+        </div>
+
+        {/* Custom Goals Section */}
+        <section>
+          <h2 className="text-white text-xl font-bold px-4 pb-3 pt-6">Kişisel Hedefler</h2>
+          <div className="flex flex-col gap-4 px-4">
+            
+            {/* Yearly Goal Card */}
+            <div className={`bg-card-dark border rounded-xl p-5 transition-all duration-500 ${isYearlyGoalMet ? 'border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.1)]' : 'border-zinc-800'}`}>
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${isYearlyGoalMet ? 'bg-green-500 text-white animate-bounce' : 'bg-blue-500/20 text-blue-400'}`}>
+                     <span className="material-symbols-outlined">{isYearlyGoalMet ? 'emoji_events' : 'menu_book'}</span>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white">Yıllık Kitap Hedefi</h3>
+                    <p className="text-xs text-zinc-400">
+                      {isYearlyGoalMet ? "Harika! Yıllık hedefine ulaştın." : "Bu yıl okumak istediğiniz kitap sayısı"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center bg-zinc-800 rounded-lg p-1">
+                    <button 
+                        onClick={() => setYearlyGoal(Math.max(1, yearlyGoal - 1))}
+                        className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md transition-colors"
+                    >-</button>
+                    <span className="w-8 text-center text-sm font-bold">{yearlyGoal}</span>
+                    <button 
+                        onClick={() => setYearlyGoal(yearlyGoal + 1)}
+                        className="w-8 h-8 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md transition-colors"
+                    >+</button>
+                </div>
+              </div>
+              
+              <div className="flex justify-between items-end mb-2">
+                 <span className="text-2xl font-bold text-white">{readCount}</span>
+                 <span className="text-sm text-zinc-500 mb-1">/ {yearlyGoal} Kitap</span>
+              </div>
+              <div className="h-2.5 w-full rounded-full bg-zinc-800 overflow-hidden relative">
+                 <div 
+                    className={`h-full rounded-full transition-all duration-1000 ${isYearlyGoalMet ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]' : 'bg-blue-500'}`} 
+                    style={{ width: `${Math.min((readCount / yearlyGoal) * 100, 100)}%` }}
+                 >
+                    {isYearlyGoalMet && <div className="absolute inset-0 bg-white/20 animate-pulse"></div>}
+                 </div>
+              </div>
+            </div>
+
+            {/* Daily Page Goal Card */}
+            <div className={`relative bg-card-dark border rounded-xl p-5 transition-all duration-500 ${isGoalMet ? 'border-green-500/30 shadow-[0_0_15px_rgba(34,197,94,0.1)]' : 'border-zinc-800'}`}>
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${isGoalMet ? 'bg-green-500 text-white animate-bounce' : 'bg-green-500/20 text-green-400'}`}>
+                     <span className="material-symbols-outlined">{isGoalMet ? 'emoji_events' : 'auto_stories'}</span>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-white">Günlük Sayfa</h3>
+                    <p className="text-xs text-zinc-400">
+                      {isGoalMet ? "Tebrikler! Günlük hedefe ulaştın." : "Bugün okuduğunuz sayfa sayısı"}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                    <span className="text-xs text-zinc-500">Hedef</span>
+                    <div className="flex items-center bg-zinc-800 rounded-lg px-2 py-1 gap-2">
+                         <input 
+                            type="number" 
+                            value={dailyPageGoal}
+                            onChange={(e) => setDailyPageGoal(parseInt(e.target.value) || 0)}
+                            className="w-12 bg-transparent text-right text-sm font-bold text-white focus:outline-none"
+                         />
+                         <span className="text-xs text-zinc-500">sf</span>
+                    </div>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-4 mb-5">
+                 <button 
+                    onClick={() => setDailyPagesRead(Math.max(0, dailyPagesRead - 10))}
+                    className="w-10 h-10 rounded-full bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white flex items-center justify-center transition-colors shrink-0"
+                 >-10</button>
+                 
+                 <div className="flex-1 flex flex-col items-center gap-1">
+                     <div className="flex items-center gap-2 border-b border-zinc-700 focus-within:border-primary transition-colors">
+                        <input 
+                          type="number"
+                          value={localPagesInput}
+                          onChange={(e) => setLocalPagesInput(e.target.value)}
+                          className="bg-transparent text-3xl font-bold text-white text-center w-24 focus:outline-none"
+                        />
+                        <button 
+                          onClick={handleManualSave}
+                          className="text-xs font-semibold bg-zinc-800 hover:bg-primary text-zinc-400 hover:text-white px-2 py-1 rounded transition-colors"
+                        >
+                          Kaydet
+                        </button>
+                     </div>
+                     <span className="text-xs text-zinc-500">Sayfa Okundu</span>
+                 </div>
+                 
+                 <button 
+                    onClick={() => setDailyPagesRead(dailyPagesRead + 10)}
+                    className="w-10 h-10 rounded-full bg-primary text-white hover:bg-primary/90 flex items-center justify-center shadow-lg shadow-primary/20 transition-colors shrink-0"
+                 >+10</button>
+              </div>
+              
+              <div className="h-2.5 w-full rounded-full bg-zinc-800 overflow-hidden relative">
+                 <div 
+                    className={`h-full rounded-full transition-all duration-700 ${isGoalMet ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]' : 'bg-green-500'}`} 
+                    style={{ width: `${Math.min((dailyPagesRead / dailyPageGoal) * 100, 100)}%` }}
+                  >
+                     {isGoalMet && <div className="absolute inset-0 bg-white/20 animate-pulse"></div>}
+                  </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        {/* Weekly Activity Chart */}
+        <section>
+             <h2 className="text-white text-xl font-bold px-4 pb-3 pt-6">Haftalık Aktivite</h2>
+             <div className="mx-4 bg-card-dark border border-zinc-800 rounded-xl p-5">
+                <div className="flex justify-between items-center mb-8">
+                    <div>
+                        <p className="text-zinc-400 text-xs font-medium uppercase tracking-wider">Haftalık Ortalama</p>
+                        <p className="text-white text-2xl font-bold mt-0.5">52 Sayfa</p>
+                    </div>
+                     <div className="flex items-center gap-3 bg-zinc-800/50 px-3 py-1.5 rounded-lg border border-zinc-700/50">
+                        <div className="flex items-center gap-1.5">
+                           <span className="w-2.5 h-2.5 rounded-full bg-primary"></span>
+                           <span className="text-[10px] text-zinc-300 font-medium">Okunan</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                           <span className="w-2.5 h-2.5 rounded-full bg-zinc-600"></span>
+                           <span className="text-[10px] text-zinc-300 font-medium">Hedef</span>
+                        </div>
+                     </div>
+                </div>
+
+                <div className="relative h-48 w-full select-none">
+                    {/* Goal Line */}
+                    <div 
+                        className="absolute w-full border-t border-dashed border-zinc-500/50 z-0 flex items-center"
+                        style={{ bottom: `${Math.min((dailyPageGoal / maxChartValue) * 100, 100)}%` }}
+                    >
+                         <span className="absolute right-0 -top-5 text-[10px] font-medium text-zinc-400 bg-zinc-800/80 px-1.5 py-0.5 rounded backdrop-blur-sm">Hedef: {dailyPageGoal}</span>
+                    </div>
+
+                    {/* Bars */}
+                    <div className="relative z-10 flex items-end justify-between h-full gap-2 sm:gap-4">
+                        {chartData.map((data, index) => {
+                             const isToday = index === 6;
+                             const heightPercent = Math.min((data.value / maxChartValue) * 100, 100);
+                             
+                             return (
+                             <div key={index} className="flex flex-col items-center flex-1 h-full justify-end group cursor-default">
+                                <div className="relative w-full max-w-[32px] flex items-end justify-center h-full">
+                                   <div 
+                                      className={`w-full rounded-t-sm transition-all duration-500 ease-out relative group-hover:opacity-90 ${isToday ? 'bg-primary shadow-[0_0_10px_rgba(19,127,236,0.3)]' : 'bg-zinc-700'}`}
+                                      style={{ height: `${heightPercent}%` }}
+                                   >
+                                      {/* Value Label */}
+                                      <div className={`absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-bold px-1.5 py-0.5 rounded transition-all transform ${isToday ? 'bg-primary text-white scale-100' : 'bg-zinc-800 text-zinc-300 opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100'}`}>
+                                          {data.value}
+                                      </div>
+                                   </div>
+                                </div>
+                                <span className={`text-[10px] mt-3 font-medium transition-colors ${isToday ? 'text-primary' : 'text-zinc-500 group-hover:text-zinc-400'}`}>{data.label}</span>
+                             </div>
+                             );
+                        })}
+                    </div>
+                </div>
+             </div>
+        </section>
+
+        {/* Monthly Goals */}
+        <section>
+          <h2 className="text-white text-xl font-bold px-4 pb-3 pt-6">Aylık Hedefler</h2>
+          <div className="flex flex-col gap-4 px-4">
+            
+            {/* Goal 1: Read 2 Books This Month */}
+            <div className={`group relative overflow-hidden rounded-xl bg-card-dark border ${isMonthlyBookGoalMet ? 'border-green-500/50 shadow-[0_0_20px_rgba(34,197,94,0.15)]' : 'border-zinc-800'} p-5 transition-all duration-500`}>
+                <div className="flex items-center gap-4">
+                    {/* Icon */}
+                    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition-all duration-500 ${isMonthlyBookGoalMet ? 'bg-green-500 text-white scale-110 rotate-12 shadow-lg shadow-green-500/30' : 'bg-blue-500/10 text-blue-400'}`}>
+                        <span className={`material-symbols-outlined text-2xl ${isMonthlyBookGoalMet ? 'animate-bounce' : ''}`}>
+                            {isMonthlyBookGoalMet ? 'emoji_events' : 'auto_stories'}
+                        </span>
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className={`text-base font-bold transition-colors ${isMonthlyBookGoalMet ? 'text-green-400' : 'text-white'}`}>
+                                Bu Ay 2 Kitap
+                            </h3>
+                            <span className={`text-xs font-medium px-2 py-1 rounded-full ${isMonthlyBookGoalMet ? 'bg-green-500/10 text-green-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                                {monthlyBooksReadCount}/{monthlyBookGoal}
+                            </span>
+                        </div>
+                        
+                        {/* Progress Bar */}
+                        <div className="h-2 w-full rounded-full bg-zinc-800 overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-1000 ease-out ${isMonthlyBookGoalMet ? 'bg-green-500' : 'bg-blue-500'}`} 
+                              style={{ width: `${Math.min((monthlyBooksReadCount / monthlyBookGoal) * 100, 100)}%` }}
+                            ></div>
+                        </div>
+                        <p className="mt-2 text-xs text-zinc-500 truncate">
+                            {isMonthlyBookGoalMet ? "Tebrikler! Bu ayki hedef tamamlandı." : "Hedefe ulaşmak için okumaya devam et."}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            {/* Goal 2: Discover New Genre */}
+            <div className={`group relative overflow-hidden rounded-xl bg-card-dark border ${newGenreDiscovered ? 'border-green-500/50 shadow-[0_0_20px_rgba(34,197,94,0.15)]' : 'border-zinc-800'} p-5 transition-all duration-500`}>
+                <div className="flex items-center gap-4">
+                    {/* Icon */}
+                    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition-all duration-500 ${newGenreDiscovered ? 'bg-green-500 text-white scale-110 rotate-12 shadow-lg shadow-green-500/30' : 'bg-purple-500/10 text-purple-400'}`}>
+                        <span className={`material-symbols-outlined text-2xl ${newGenreDiscovered ? 'animate-bounce' : ''}`}>
+                            {newGenreDiscovered ? 'verified' : 'explore'}
+                        </span>
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                         <div className="flex items-center justify-between mb-2">
+                            <h3 className={`text-base font-bold transition-colors ${newGenreDiscovered ? 'text-green-400' : 'text-white'}`}>
+                                Yeni Tür Keşfi
+                            </h3>
+                            <span className={`text-xs font-medium px-2 py-1 rounded-full ${newGenreDiscovered ? 'bg-green-500/10 text-green-400' : 'bg-zinc-800 text-zinc-400'}`}>
+                                {newGenreDiscovered ? '1/1' : '0/1'}
+                            </span>
+                        </div>
+
+                         {/* Progress Bar */}
+                        <div className="h-2 w-full rounded-full bg-zinc-800 overflow-hidden">
+                            <div 
+                               className={`h-full rounded-full transition-all duration-1000 ease-out ${newGenreDiscovered ? 'bg-green-500' : 'bg-purple-500'}`} 
+                               style={{ width: newGenreDiscovered ? '100%' : '0%' }}
+                            ></div>
+                        </div>
+                         <p className="mt-2 text-xs text-zinc-500 truncate">
+                            {newGenreDiscovered ? "Yeni bir ufuk açtın!" : "Farklı bir kategoriden kitap oku."}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+          </div>
+        </section>
+      </main>
+
+      {/* Bottom Nav */}
+      <nav className="fixed bottom-0 left-0 right-0 flex justify-around items-center bg-[#101922]/90 backdrop-blur-md border-t border-zinc-800 h-20 z-40">
+        <button onClick={() => onNavClick('dashboard')} className="flex flex-col items-center justify-center gap-1 text-zinc-500 hover:text-white transition-colors">
+          <span className="material-symbols-outlined">home</span>
+          <span className="text-[10px] font-medium">Anasayfa</span>
+        </button>
+        <button className="flex flex-col items-center justify-center gap-1 text-primary">
+          <span className="material-symbols-outlined material-symbols-filled">emoji_events</span>
+          <span className="text-[10px] font-bold">Başarılar</span>
+        </button>
+      </nav>
+    </div>
+  );
+};
+
+export default Stats;
