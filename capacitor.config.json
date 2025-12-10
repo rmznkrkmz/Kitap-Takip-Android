@@ -1,0 +1,8 @@
+{
+  "appId": "com.kitaptakip.android",
+  "appName": "Kitap Takip",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

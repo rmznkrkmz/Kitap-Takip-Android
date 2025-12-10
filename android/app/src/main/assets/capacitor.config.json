@@ -1,5 +1,8 @@
 {
-	"appId": "com.rmc.kitaptakipandroid",
+	"appId": "com.kitaptakip.android",
 	"appName": "Kitap Takip",
-	"webDir": "dist"
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	}
 }
