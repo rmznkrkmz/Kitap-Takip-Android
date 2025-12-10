@@ -1,13 +1,22 @@
 
 import React, { useState, useEffect } from 'react';
-import { Book, ViewState, TabType } from './types';
+import { Book, ViewState, TabType, LanguageCode } from './types';
 import { INITIAL_BOOKS } from './constants';
+import { TRANSLATIONS } from './translations';
 import Dashboard from './views/Dashboard';
 import AddBook from './views/AddBook';
 import BookDetails from './views/BookDetails';
 import Stats from './views/Stats';
 import Login from './views/Login';
-import Top100Books from './views/Top100Books';
+import ReadingList100 from './views/ReadingList100';
+import Settings from './views/Settings';
+import ImportBooks from './views/ImportBooks';
+
+// Helper to get consistent YYYY-MM-DD string regardless of locale
+const getTodayISO = () => {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+};
 
 // Helper for local storage
 const loadState = <T,>(key: string, defaultValue: T): T => {
@@ -20,36 +29,16 @@ const loadState = <T,>(key: string, defaultValue: T): T => {
   }
 };
 
-// Helper to get consistent YYYY-MM-DD key
-const getDateKey = (date: Date = new Date()) => {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-};
-
-// Helper for Turkish Possessive Suffixes (Vowel Harmony)
-const getSuffix = (name: string) => {
-  const lastVowel = name.match(/[aıeiouöü]/gi)?.pop()?.toLowerCase();
-  
-  // Last letter check for apostrophe (optional, but good for proper nouns)
-  // We assume all names are proper nouns here.
-  
-  if (!lastVowel) return "'in"; // Fallback
-
-  if (['a', 'ı'].includes(lastVowel)) return "'ın";
-  if (['e', 'i'].includes(lastVowel)) return "'in";
-  if (['o', 'u'].includes(lastVowel)) return "'un";
-  if (['ö', 'ü'].includes(lastVowel)) return "'ün";
-  
-  return "'in";
-};
-
 const App: React.FC = () => {
-  // User Identity - Persisted
+  // Language State - Persisted
+  const [language, setLanguage] = useState<LanguageCode>(() => loadState('appLanguage', 'tr'));
+
+  // User Profile State - Persisted
   const [userName, setUserName] = useState<string>(() => loadState('userName', ''));
 
-  // State for Navigation - Initial logic handles redirect if not logged in
+  // State for Navigation
   const [currentView, setCurrentView] = useState<ViewState>(() => {
-    // Direct check to localStorage to prevent flicker on first render
-    const savedName = localStorage.getItem('userName');
+    const savedName = loadState('userName', '');
     return savedName ? 'dashboard' : 'login';
   });
   
@@ -59,19 +48,19 @@ const App: React.FC = () => {
   // State for UI - Not Persisted
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('reading');
+  const [newlyAddedBookId, setNewlyAddedBookId] = useState<string | null>(null);
 
   // State for Stats/Goals - Persisted
   const [yearlyGoal, setYearlyGoal] = useState(() => loadState('yearlyGoal', 30));
   const [dailyPageGoal, setDailyPageGoal] = useState(() => loadState('dailyPageGoal', 50));
   
-  // New State: Has the user set their initial goals?
-  const [hasSetInitialGoals, setHasSetInitialGoals] = useState(() => loadState('hasSetInitialGoals', false));
+  const [hasSetGoals, setHasSetGoals] = useState(() => loadState('hasSetGoals', false));
   
   // Daily Pages Read - Persisted with Date Check (Reset on new day)
   const [dailyPagesRead, setDailyPagesRead] = useState(() => {
     try {
       const savedDate = localStorage.getItem('dailyPagesDate');
-      const today = new Date().toLocaleDateString('tr-TR');
+      const today = getTodayISO(); // Use ISO format
       // If the saved date is not today, reset count to 0
       if (savedDate !== today) {
         return 0;
@@ -82,7 +71,7 @@ const App: React.FC = () => {
     }
   });
 
-  // Reading History for Charts - Persisted
+  // Reading History (Date -> Page Count map) for Charts
   const [readingHistory, setReadingHistory] = useState<Record<string, number>>(() => loadState('readingHistory', {}));
 
   // State for Streak - Persisted
@@ -90,6 +79,10 @@ const App: React.FC = () => {
   const [lastStreakDate, setLastStreakDate] = useState<string | null>(() => loadState('lastStreakDate', null));
 
   // --- Persistence Effects ---
+  useEffect(() => {
+    localStorage.setItem('appLanguage', JSON.stringify(language));
+  }, [language]);
+
   useEffect(() => {
     localStorage.setItem('userName', JSON.stringify(userName));
   }, [userName]);
@@ -107,20 +100,27 @@ const App: React.FC = () => {
   }, [dailyPageGoal]);
 
   useEffect(() => {
-    localStorage.setItem('hasSetInitialGoals', JSON.stringify(hasSetInitialGoals));
-  }, [hasSetInitialGoals]);
+    localStorage.setItem('hasSetGoals', JSON.stringify(hasSetGoals));
+  }, [hasSetGoals]);
 
   useEffect(() => {
+    // 1. Save current daily count
     localStorage.setItem('dailyPagesRead', JSON.stringify(dailyPagesRead));
-    localStorage.setItem('dailyPagesDate', new Date().toLocaleDateString('tr-TR'));
+    
+    // 2. Update date tracker with ISO format
+    const todayStr = getTodayISO();
+    localStorage.setItem('dailyPagesDate', todayStr);
 
-    // Update History when daily pages change
-    const todayKey = getDateKey();
+    // 3. Update History (Key format: YYYY-MM-DD)
     setReadingHistory(prev => {
-      const newHistory = { ...prev, [todayKey]: dailyPagesRead };
+      // Only update if value changed to avoid unnecessary writes/renders
+      if (prev[todayStr] === dailyPagesRead) return prev;
+      
+      const newHistory = { ...prev, [todayStr]: dailyPagesRead };
       localStorage.setItem('readingHistory', JSON.stringify(newHistory));
       return newHistory;
     });
+
   }, [dailyPagesRead]);
 
   useEffect(() => {
@@ -131,21 +131,17 @@ const App: React.FC = () => {
     localStorage.setItem('lastStreakDate', JSON.stringify(lastStreakDate));
   }, [lastStreakDate]);
 
-  // --- Logic Handlers ---
+  // --- Navigation Handlers ---
+  const navigateTo = (view: ViewState) => {
+    setCurrentView(view);
+    if (view !== 'dashboard') {
+        setTimeout(() => setNewlyAddedBookId(null), 500);
+    }
+  };
 
   const handleLogin = (name: string) => {
     setUserName(name);
-    setCurrentView('dashboard');
-  };
-
-  const handleUpdateName = (newName: string) => {
-    setUserName(newName);
-  };
-
-  const formattedUserName = userName ? `${userName}${getSuffix(userName)} Kitaplığı` : 'Kitaplarım Panosu';
-
-  const navigateTo = (view: ViewState) => {
-    setCurrentView(view);
+    navigateTo('dashboard');
   };
 
   const handleBookClick = (bookId: string) => {
@@ -155,42 +151,55 @@ const App: React.FC = () => {
 
   const handleAddBook = (newBook: Book) => {
     setBooks([newBook, ...books]);
+    setNewlyAddedBookId(newBook.id);
+    navigateTo('dashboard');
+    setTimeout(() => {
+      setNewlyAddedBookId(null);
+    }, 2000); 
+  };
+
+  const handleImportBooks = (newBooks: Book[]) => {
+    setBooks(prev => [...newBooks, ...prev]);
+    // Optionally highlight the first imported book
+    if (newBooks.length > 0) {
+        setNewlyAddedBookId(newBooks[0].id);
+        setTimeout(() => setNewlyAddedBookId(null), 3000);
+    }
     navigateTo('dashboard');
   };
 
+  const handleEditBook = (updatedBook: Book) => {
+    setBooks(books.map(b => b.id === updatedBook.id ? updatedBook : b));
+  };
+
   const handleDeleteBook = (bookId: string) => {
-    if (window.confirm('Bu kitabı silmek istediğinize emin misiniz?')) {
-      setBooks(books.filter(b => b.id !== bookId));
-      navigateTo('dashboard');
-    }
+    setBooks(books.filter(b => b.id !== bookId));
+    navigateTo('dashboard');
   };
 
   const handleUpdateBookStatus = (bookId: string, status: Book['status']) => {
-    const today = getDateKey();
-
     setBooks(books.map(b => {
       if (b.id === bookId) {
-        const updatedBook: Book = { ...b, status };
+        const updatedBook = { ...b, status };
+        const formattedDate = getTodayISO();
         
-        if (status === 'read') {
-          // If marking as read:
-          // 1. Ensure Start Date exists (if not, assume started today)
-          if (!updatedBook.startDate) updatedBook.startDate = today;
-          // 2. Ensure Finish Date exists (set to today if not present)
-          if (!updatedBook.finishDate) updatedBook.finishDate = today;
-          
-        } else if (status === 'reading') {
-          // If marking as reading:
-          // 1. Ensure Start Date exists (if not, assume started today)
-          if (!updatedBook.startDate) updatedBook.startDate = today;
-          // 2. Clear Finish Date (it's in progress)
-          updatedBook.finishDate = undefined;
-          
-        } else if (status === 'want-to-read') {
-          // If marking as want-to-read:
-          // Clear both dates, as reading hasn't genuinely started
-          updatedBook.startDate = undefined;
-          updatedBook.finishDate = undefined;
+        if (status === 'reading') {
+            if (!updatedBook.startDate) {
+                updatedBook.startDate = formattedDate;
+            }
+            updatedBook.finishDate = undefined;
+        } 
+        else if (status === 'read') {
+            if (!updatedBook.startDate) {
+                updatedBook.startDate = formattedDate;
+            }
+            if (b.status !== 'read') {
+                updatedBook.finishDate = formattedDate;
+            }
+        } 
+        else if (status === 'want-to-read') {
+            updatedBook.startDate = undefined;
+            updatedBook.finishDate = undefined;
         }
         
         return updatedBook;
@@ -202,10 +211,34 @@ const App: React.FC = () => {
   const handleUpdateBookDates = (bookId: string, startDate?: string, finishDate?: string) => {
     setBooks(books.map(b => {
       if (b.id === bookId) {
-        return { ...b, startDate, finishDate };
+        return { 
+          ...b, 
+          startDate: startDate !== undefined ? startDate : b.startDate,
+          finishDate: finishDate !== undefined ? finishDate : b.finishDate
+        };
       }
       return b;
     }));
+  };
+
+  const handleUpdateBookProgress = (bookId: string, currentPage: number, totalPages?: number) => {
+      setBooks(books.map(b => {
+          if (b.id === bookId) {
+              const updated = { ...b, currentPage };
+              if (totalPages !== undefined) updated.totalPages = totalPages;
+              
+              // Add difference to daily stats if increasing pages
+              // NOTE: This logic assumes 'currentPage' is always accurate. 
+              // If user corrects a typo (e.g. 100 -> 10), we don't subtract from daily stats to avoid complex ledger logic.
+              if (currentPage > (b.currentPage || 0)) {
+                  const diff = currentPage - (b.currentPage || 0);
+                  setDailyPagesRead(dailyPagesRead + diff);
+              }
+              
+              return updated;
+          }
+          return b;
+      }));
   };
 
   const handleUpdateBookNotes = (bookId: string, notes: string) => {
@@ -230,14 +263,13 @@ const App: React.FC = () => {
 
   // Streak Handler
   const handleIncrementStreak = () => {
-    const today = new Date().toLocaleDateString('tr-TR');
+    const today = getTodayISO();
     
     // If different date, allow increment
     if (lastStreakDate !== today) {
       setStreakCount(prev => prev + 1);
       setLastStreakDate(today);
       
-      // Optional: Also add some pages to daily read if not already added
       if (dailyPagesRead === 0) {
         setDailyPagesRead(10);
       }
@@ -245,26 +277,34 @@ const App: React.FC = () => {
   };
 
   // Check if streak is already claimed for today
-  const hasReadToday = lastStreakDate === new Date().toLocaleDateString('tr-TR');
+  const hasReadToday = lastStreakDate === getTodayISO();
 
-  // Render View based on state
+  // --- I18N Logic ---
+  const t = TRANSLATIONS[language];
+
   const renderView = () => {
     switch (currentView) {
       case 'login':
-        return <Login onLogin={handleLogin} />;
+        return (
+          <Login 
+            onLogin={handleLogin} 
+            language={language}
+            setLanguage={setLanguage}
+            t={t}
+          />
+        );
       case 'dashboard':
         return (
           <Dashboard 
+            userName={userName}
             books={books}
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             onBookClick={handleBookClick}
             onAddClick={() => navigateTo('add')}
-            onStatsClick={() => navigateTo('stats')}
-            onTop100Click={() => navigateTo('top100')}
-            dashboardTitle={formattedUserName}
-            userName={userName}
-            onUpdateName={handleUpdateName}
+            onNavClick={(view) => navigateTo(view)}
+            newlyAddedBookId={newlyAddedBookId}
+            t={t}
           />
         );
       case 'add':
@@ -272,6 +312,15 @@ const App: React.FC = () => {
           <AddBook 
             onBack={() => navigateTo('dashboard')}
             onSave={handleAddBook}
+            t={t}
+          />
+        );
+      case 'import':
+        return (
+          <ImportBooks 
+            onBack={() => navigateTo('dashboard')}
+            onImport={handleImportBooks}
+            t={t}
           />
         );
       case 'details':
@@ -286,7 +335,11 @@ const App: React.FC = () => {
             onUpdateNotes={handleUpdateBookNotes}
             onToggleFavorite={handleToggleFavorite}
             onUpdateRating={handleUpdateBookRating}
-            onDeleteBook={handleDeleteBook}
+            onEditBook={handleEditBook}
+            onDelete={() => handleDeleteBook(selectedBook.id)}
+            onUpdateProgress={handleUpdateBookProgress}
+            t={t}
+            language={language}
           />
         );
       case 'stats':
@@ -301,22 +354,37 @@ const App: React.FC = () => {
             setDailyPageGoal={setDailyPageGoal}
             dailyPagesRead={dailyPagesRead}
             setDailyPagesRead={setDailyPagesRead}
-            readingHistory={readingHistory}
             streakCount={streakCount}
             hasReadToday={hasReadToday}
             onIncrementStreak={handleIncrementStreak}
-            hasSetInitialGoals={hasSetInitialGoals}
-            setHasSetInitialGoals={setHasSetInitialGoals}
+            readingHistory={readingHistory}
+            hasSetGoals={hasSetGoals}
+            onCompleteGoals={() => setHasSetGoals(true)}
+            t={t}
+            language={language}
           />
         );
-      case 'top100':
+      case 'reading-list-100':
         return (
-          <Top100Books 
+          <ReadingList100 
             onNavClick={(view) => navigateTo(view)}
+            t={t}
+            language={language}
+          />
+        );
+      case 'settings':
+        return (
+          <Settings 
+             onBack={() => navigateTo('dashboard')}
+             currentLanguage={language}
+             setLanguage={setLanguage}
+             userName={userName}
+             setUserName={setUserName}
+             t={t}
           />
         );
       default:
-        return <Login onLogin={handleLogin} />;
+        return <div>View not found</div>;
     }
   };
 

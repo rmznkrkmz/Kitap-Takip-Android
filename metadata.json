@@ -1,5 +1,7 @@
 {
-  "name": "Kitap Takip Android",
+  "name": "Kitap Takip (Android)",
   "description": "A comprehensive book tracking application allowing users to manage their reading list, track progress, and view reading statistics.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera"
+  ]
 }
